@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CodEditor — WedEdit</title>
+<meta name="description" content="Онлайн-редактор кода: создавайте проекты, тестируйте на лету, сохраняйте в облако." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+<style>
+/* ==========================================================
+   CodEditor — design tokens (согласовано с WedEdit хабом)
+   ========================================================== */
+:root {
+  --bg: #0a0b10;
+  --bg-elevated: #12141c;
+  --bg-panel: #14161f;
+  --bg-editor: #0d0e14;
+  --border: #23262f;
+  --border-soft: #1b1d26;
+
+  --text-primary: #e8e9ed;
+  --text-muted: #8a8f9c;
+  --text-faint: #565b68;
+
+  --accent-violet: #7c5cfc;
+  --accent-violet-soft: rgba(124, 92, 252, 0.14);
+  --accent-mint: #5eead4;
+  --accent-amber: #ffb454;
+  --accent-rose: #ff6b81;
+
+  --radius: 12px;
+  --radius-sm: 7px;
+
+  --font-display: "Sora", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+body.locked { overflow: hidden; }
+
+/* ==========================================================
+   Auth gate (тот же паттерн, что на главной)
+   ========================================================== */
+.gate {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 9, 13, 0.9);
+  backdrop-filter: blur(10px);
+  transition: opacity 0.4s var(--ease), visibility 0.4s;
+}
+.gate.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.gate-card {
+  width: min(420px, 90vw);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px 36px;
+  text-align: center;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+  animation: rise 0.5s var(--ease);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.gate-icon {
+  width: 52px; height: 52px; margin: 0 auto 20px;
+  border-radius: 12px; background: var(--accent-violet-soft);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-violet); font-family: var(--font-mono); font-weight: 700; font-size: 20px;
+}
+.gate-card h2 { font-family: var(--font-display); font-size: 22px; margin: 0 0 8px; }
+.gate-card p { color: var(--text-muted); font-size: 14px; margin: 0 0 26px; }
+.btn-google {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: var(--text-primary); color: #0a0b10; border: none; border-radius: var(--radius-sm);
+  padding: 12px 18px; font-weight: 600; font-size: 14px; cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.btn-google:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(124,92,252,0.25); }
+.btn-google svg { width: 18px; height: 18px; }
+.gate-error { margin-top: 14px; font-size: 12px; color: var(--accent-rose); font-family: var(--font-mono); min-height: 16px; }
+
+/* ==========================================================
+   App shell
+   ========================================================== */
+.app-shell {
+  display: grid;
+  grid-template-rows: 52px 1fr 26px;
+  grid-template-columns: 240px 1fr;
+  height: 100vh;
+}
+
+/* Top bar */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.topbar-left { display: flex; align-items: center; gap: 14px; }
+.brand-mini {
+  font-family: var(--font-display); font-weight: 700; font-size: 15px;
+  display: flex; align-items: center; gap: 6px; text-decoration: none; color: var(--text-primary);
+}
+.brand-mini .dot { color: var(--accent-mint); font-family: var(--font-mono); }
+.brand-mini:hover { color: var(--accent-mint); }
+.crumb-sep { color: var(--text-faint); font-size: 13px; }
+.project-name-label {
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-muted);
+  padding: 4px 8px; border-radius: var(--radius-sm); cursor: text;
+  border: 1px solid transparent;
+}
+.project-name-label:hover { border-color: var(--border); color: var(--text-primary); }
+.project-name-label.editing {
+  border-color: var(--accent-violet); color: var(--text-primary); outline: none;
+}
+
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.btn {
+  font-family: var(--font-body);
+  font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 7px 13px;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 7px;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), transform 0.15s var(--ease);
+}
+.btn:hover { border-color: var(--accent-violet); }
+.btn:active { transform: scale(0.97); }
+.btn-run {
+  background: var(--accent-mint); color: #0a0b10; border-color: var(--accent-mint);
+}
+.btn-run:hover { box-shadow: 0 6px 18px rgba(94,234,212,0.3); }
+.btn-save { background: var(--accent-violet); border-color: var(--accent-violet); color: #fff; }
+.btn-save:hover { box-shadow: 0 6px 18px rgba(124,92,252,0.3); }
+.btn-save[disabled] { opacity: 0.5; cursor: default; }
+
+.user-box { display: none; align-items: center; gap: 10px; }
+.user-box.visible { display: flex; }
+.user-box img { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border); }
+.btn-logout {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 5px 9px; cursor: pointer;
+}
+.btn-logout:hover { border-color: var(--accent-rose); color: var(--accent-rose); }
+
+/* Sidebar: project list */
+.sidebar {
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-panel);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.sidebar-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 14px 8px;
+}
+.sidebar-head span {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.btn-new {
+  width: 22px; height: 22px; border-radius: 6px;
+  background: var(--accent-violet-soft); color: var(--accent-violet);
+  border: none; cursor: pointer; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s var(--ease);
+}
+.btn-new:hover { background: var(--accent-violet); color: #fff; }
+
+.project-list { list-style: none; margin: 0; padding: 4px 8px; flex: 1; }
+.project-item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: background 0.15s var(--ease);
+  position: relative;
+}
+.project-item:hover { background: var(--bg-elevated); }
+.project-item.active { background: var(--accent-violet-soft); }
+.project-item.active .project-title { color: var(--text-primary); }
+.project-item-main { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.project-item .file-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-mint); flex-shrink: 0; }
+.project-title {
+  font-size: 13px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.project-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); flex-shrink: 0; }
+.project-menu-btn {
+  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  font-size: 14px; padding: 2px 5px; border-radius: 4px; opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+.project-item:hover .project-menu-btn { opacity: 1; }
+.project-menu-btn:hover { color: var(--accent-rose); }
+
+.sidebar-empty {
+  margin: 20px 14px;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+/* Main editor + preview split */
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+  min-width: 0;
+}
+
+.editor-pane {
+  display: flex; flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border-soft);
+}
+.file-tabs {
+  display: flex;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.file-tab {
+  font-family: var(--font-mono); font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 10px 16px;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 7px;
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.file-tab .file-dot { width: 7px; height: 7px; border-radius: 50%; }
+.file-tab.tab-html .file-dot { background: var(--accent-rose); }
+.file-tab.tab-css .file-dot { background: var(--accent-amber); }
+.file-tab.tab-js .file-dot { background: var(--accent-mint); }
+.file-tab.active { color: var(--text-primary); border-bottom-color: var(--accent-violet); background: var(--bg-editor); }
+.file-tab:hover:not(.active) { color: var(--text-primary); }
+
+.cm-mount-wrap { flex: 1; min-height: 0; position: relative; }
+.CodeMirror {
+  height: 100%;
+  font-family: var(--font-mono) !important;
+  font-size: 13.5px;
+  background: var(--bg-editor) !important;
+  color: var(--text-primary) !important;
+}
+.cm-mount { position: absolute; inset: 0; display: none; }
+.cm-mount.active { display: block; }
+
+.preview-pane {
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.preview-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.preview-bar span {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.btn-console-toggle {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 3px 9px; cursor: pointer;
+}
+.btn-console-toggle:hover { border-color: var(--accent-mint); color: var(--accent-mint); }
+
+.preview-frame-wrap { flex: 1; min-height: 0; background: #fff; }
+#preview-frame { width: 100%; height: 100%; border: none; display: block; }
+
+.console-drawer {
+  height: 0;
+  overflow: hidden;
+  background: var(--bg-editor);
+  border-top: 1px solid var(--border-soft);
+  transition: height 0.25s var(--ease);
+  flex-shrink: 0;
+}
+.console-drawer.open { height: 160px; }
+.console-log {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.console-line { padding: 3px 0; border-bottom: 1px solid var(--border-soft); display: flex; gap: 8px; }
+.console-line .tag { flex-shrink: 0; font-size: 10px; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; height: fit-content; }
+.console-line.log .tag { background: rgba(138,143,156,0.15); color: var(--text-muted); }
+.console-line.info .tag { background: rgba(94,234,212,0.15); color: var(--accent-mint); }
+.console-line.warn .tag { background: rgba(255,180,84,0.15); color: var(--accent-amber); }
+.console-line.error .tag { background: rgba(255,107,129,0.15); color: var(--accent-rose); }
+.console-line .msg { color: var(--text-primary); word-break: break-word; }
+.console-empty { color: var(--text-faint); padding: 10px 2px; }
+
+/* Status bar */
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px;
+  background: var(--accent-violet);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.statusbar-left, .statusbar-right { display: flex; align-items: center; gap: 14px; }
+#save-status.dirty::before { content: "● "; }
+
+/* Modal (new project / rename / confirm) */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(8,9,13,0.75);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; visibility: hidden; transition: opacity 0.25s var(--ease), visibility 0.25s;
+}
+.modal-overlay.open { opacity: 1; visibility: visible; }
+.modal-box {
+  width: min(360px, 90vw);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  transform: translateY(10px);
+  transition: transform 0.25s var(--ease);
+}
+.modal-overlay.open .modal-box { transform: translateY(0); }
+.modal-box h3 { font-family: var(--font-display); font-size: 17px; margin: 0 0 6px; }
+.modal-box p { color: var(--text-muted); font-size: 13px; margin: 0 0 16px; }
+.modal-box input[type="text"] {
+  width: 100%; background: var(--bg-editor); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 9px 11px; color: var(--text-primary);
+  font-family: var(--font-body); font-size: 14px; margin-bottom: 16px;
+}
+.modal-box input[type="text"]:focus { outline: none; border-color: var(--accent-violet); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.btn-ghost:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.btn-danger { background: var(--accent-rose); border-color: var(--accent-rose); color: #fff; }
+.btn-danger:hover { box-shadow: 0 6px 18px rgba(255,107,129,0.3); }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 1fr; grid-template-rows: 52px 1fr 26px; }
+  .sidebar { display: none; }
+  .workspace { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  .editor-pane { border-right: none; border-bottom: 1px solid var(--border-soft); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+</style>
+</head>
+<body class="locked">
+
+<!-- ============================================================
+     AUTH GATE
+     ============================================================ -->
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-icon">W</div>
+    <h2>Войдите, чтобы продолжить</h2>
+    <p>CodEditor доступен только зарегистрированным пользователям — так все ваши проекты надёжно сохраняются в облаке.</p>
+    <button class="btn-google" id="btn-google">
+      <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.6 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4c-7.7 0-14.4 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.3 0 10.2-2 13.9-5.4l-6.4-5.4C29.4 34.9 26.8 36 24 36c-5.4 0-9.9-3.4-11.5-8.2l-6.5 5C9.4 39.6 16.1 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 3-3.1 5.4-5.8 6.9l6.4 5.4C39.7 37 44 31 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
+      Войти через Google
+    </button>
+    <div class="gate-error" id="gate-error"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     APP SHELL
+     ============================================================ -->
+<div class="app-shell">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="brand-mini">WedEdit<span class="dot">_</span></a>
+      <span class="crumb-sep">/</span>
+      <span class="project-name-label" id="project-name-label" title="Нажмите, чтобы переименовать">Загрузка…</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-run" id="btn-run">▶ Запустить</button>
+      <button class="btn btn-save" id="btn-save">Сохранить</button>
+      <div class="user-box" id="user-box">
+        <img id="user-avatar" alt="" />
+        <span id="user-name"></span>
+        <button class="btn-logout" id="btn-logout">Выйти</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar: project list -->
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <span>Проекты</span>
+      <button class="btn-new" id="btn-new-project" title="Новый проект">+</button>
+    </div>
+    <ul class="project-list" id="project-list"></ul>
+    <div class="sidebar-empty" id="sidebar-empty" style="display:none;">
+      У вас пока нет проектов — нажмите «+», чтобы создать первый.
+    </div>
+  </aside>
+
+  <!-- Workspace: editor + preview -->
+  <div class="workspace">
+
+    <section class="editor-pane">
+      <div class="file-tabs">
+        <div class="file-tab tab-html active" data-file="html"><span class="file-dot"></span>index.html</div>
+        <div class="file-tab tab-css" data-file="css"><span class="file-dot"></span>style.css</div>
+        <div class="file-tab tab-js" data-file="js"><span class="file-dot"></span>script.js</div>
+      </div>
+      <div class="cm-mount-wrap">
+        <div class="cm-mount active" data-file="html" id="cm-html"></div>
+        <div class="cm-mount" data-file="css" id="cm-css"></div>
+        <div class="cm-mount" data-file="js" id="cm-js"></div>
+      </div>
+    </section>
+
+    <section class="preview-pane">
+      <div class="preview-bar">
+        <span>Предпросмотр</span>
+        <button class="btn-console-toggle" id="btn-console-toggle">Консоль</button>
+      </div>
+      <div class="preview-frame-wrap">
+        <iframe id="preview-frame" sandbox="allow-scripts"></iframe>
+      </div>
+      <div class="console-drawer" id="console-drawer">
+        <div class="console-log" id="console-log"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <div class="statusbar-left">
+      <span id="save-status">Загрузка…</span>
+    </div>
+    <div class="statusbar-right">
+      <span>CodEditor · WedEdit</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================================
+     MODAL — new project / rename / delete confirm
+     ============================================================ -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
+    <h3 id="modal-title">Новый проект</h3>
+    <p id="modal-desc">Дайте проекту имя.</p>
+    <input type="text" id="modal-input" maxlength="60" />
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Отмена</button>
+      <button class="btn btn-save" id="modal-confirm">Создать</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script type="module">
+import { firebaseConfig } from "./config.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore, collection, doc, setDoc, addDoc, deleteDoc,
+  onSnapshot, serverTimestamp, query, orderBy,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ------------------------------------------------------------
+// Firebase init
+// ------------------------------------------------------------
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+const provider = new GoogleAuthProvider();
+
+// ------------------------------------------------------------
+// DOM refs
+// ------------------------------------------------------------
+const gate = document.getElementById("gate");
+const gateError = document.getElementById("gate-error");
+const btnGoogle = document.getElementById("btn-google");
+const btnLogout = document.getElementById("btn-logout");
+const userBox = document.getElementById("user-box");
+const userName = document.getElementById("user-name");
+const userAvatar = document.getElementById("user-avatar");
+
+const projectListEl = document.getElementById("project-list");
+const sidebarEmpty = document.getElementById("sidebar-empty");
+const btnNewProject = document.getElementById("btn-new-project");
+const projectNameLabel = document.getElementById("project-name-label");
+const btnSave = document.getElementById("btn-save");
+const btnRun = document.getElementById("btn-run");
+const saveStatus = document.getElementById("save-status");
+
+const fileTabs = document.querySelectorAll(".file-tab");
+const previewFrame = document.getElementById("preview-frame");
+const consoleDrawer = document.getElementById("console-drawer");
+const consoleLog = document.getElementById("console-log");
+const btnConsoleToggle = document.getElementById("btn-console-toggle");
+
+const modalOverlay = document.getElementById("modal-overlay");
+const modalTitle = document.getElementById("modal-title");
+const modalDesc = document.getElementById("modal-desc");
+const modalInput = document.getElementById("modal-input");
+const modalConfirm = document.getElementById("modal-confirm");
+const modalCancel = document.getElementById("modal-cancel");
+
+// ------------------------------------------------------------
+// State
+// ------------------------------------------------------------
+let currentUser = null;
+let unsubscribeProjects = null;
+let projects = [];
+let currentProjectId = null;
+let isDirty = false;
+let saveDebounceTimer = null;
+let previewDebounceTimer = null;
+
+const DEFAULT_FILES = {
+  html: "<h1>Привет, мир!</h1>\n<p>Начните писать код — предпросмотр обновится сам.</p>",
+  css: "body {\n  font-family: sans-serif;\n  background: #ffffff;\n  color: #111;\n  padding: 24px;\n}",
+  js: "console.log(\"Проект запущен ✨\");",
+};
+
+// ------------------------------------------------------------
+// CodeMirror editors
+// ------------------------------------------------------------
+const editors = {};
+function initEditors() {
+  editors.html = CodeMirror(document.getElementById("cm-html"), {
+    value: DEFAULT_FILES.html, mode: "htmlmixed", theme: "default",
+    lineNumbers: true, tabSize: 2, indentUnit: 2, viewportMargin: Infinity,
+  });
+  editors.css = CodeMirror(document.getElementById("cm-css"), {
+    value: DEFAULT_FILES.css, mode: "css", theme: "default",
+    lineNumbers: true, tabSize: 2, indentUnit: 2, viewportMargin: Infinity,
+  });
+  editors.js = CodeMirror(document.getElementById("cm-js"), {
+    value: DEFAULT_FILES.js, mode: "javascript", theme: "default",
+    lineNumbers: true, tabSize: 2, indentUnit: 2, viewportMargin: Infinity,
+  });
+
+  Object.values(editors).forEach((cm) => {
+    cm.on("change", () => {
+      markDirty();
+      clearTimeout(previewDebounceTimer);
+      previewDebounceTimer = setTimeout(runPreview, 500);
+    });
+  });
+}
+
+function switchTab(target) {
+  fileTabs.forEach((t) => t.classList.toggle("active", t.dataset.file === target));
+  document.querySelectorAll(".cm-mount").forEach((m) => m.classList.toggle("active", m.dataset.file === target));
+  editors[target].refresh();
+  editors[target].focus();
+}
+fileTabs.forEach((tab) => tab.addEventListener("click", () => switchTab(tab.dataset.file)));
+
+// ------------------------------------------------------------
+// Live preview + console capture
+// ------------------------------------------------------------
+function buildPreviewDoc() {
+  const html = editors.html.getValue();
+  const css = editors.css.getValue();
+  const js = editors.js.getValue();
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css}</style></head><body>${html}
+<script>
+(function(){
+  function send(type, args){
+    parent.postMessage({ source: "codeditor-console", type: type, args: args.map(String) }, "*");
+  }
+  ["log","info","warn","error"].forEach(function(m){
+    var orig = console[m];
+    console[m] = function(){ send(m, Array.prototype.slice.call(arguments)); orig.apply(console, arguments); };
+  });
+  window.addEventListener("error", function(e){ send("error", [e.message]); });
+})();
+<\/script>
+<script>
+try {
+${js}
+} catch (e) {
+  parent.postMessage({ source: "codeditor-console", type: "error", args: [String(e.message || e)] }, "*");
+}
+<\/script>
+</body></html>`;
+}
+
+function runPreview() {
+  previewFrame.srcdoc = buildPreviewDoc();
+}
+btnRun.addEventListener("click", () => {
+  clearConsole();
+  runPreview();
+});
+
+window.addEventListener("message", (event) => {
+  if (event.data && event.data.source === "codeditor-console") {
+    appendConsoleLine(event.data.type, event.data.args.join(" "));
+  }
+});
+
+function appendConsoleLine(type, msg) {
+  const empty = consoleLog.querySelector(".console-empty");
+  if (empty) empty.remove();
+  const line = document.createElement("div");
+  line.className = `console-line ${type}`;
+  line.innerHTML = `<span class="tag">${type}</span><span class="msg"></span>`;
+  line.querySelector(".msg").textContent = msg;
+  consoleLog.appendChild(line);
+  consoleLog.scrollTop = consoleLog.scrollHeight;
+}
+function clearConsole() {
+  consoleLog.innerHTML = '<div class="console-empty">Консоль пуста — запустите проект</div>';
+}
+btnConsoleToggle.addEventListener("click", () => {
+  consoleDrawer.classList.toggle("open");
+});
+
+// ------------------------------------------------------------
+// Dirty / save status
+// ------------------------------------------------------------
+function markDirty() {
+  isDirty = true;
+  saveStatus.textContent = "Не сохранено";
+  saveStatus.classList.add("dirty");
+  clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(saveCurrentProject, 2000);
+}
+function markClean() {
+  isDirty = false;
+  const time = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  saveStatus.textContent = `Сохранено в ${time}`;
+  saveStatus.classList.remove("dirty");
+}
+
+// ------------------------------------------------------------
+// Auth
+// ------------------------------------------------------------
+btnGoogle.addEventListener("click", async () => {
+  gateError.textContent = "";
+  btnGoogle.disabled = true;
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    console.error(err);
+    gateError.textContent = "Не получилось войти. Попробуйте снова.";
+  } finally {
+    btnGoogle.disabled = false;
+  }
+});
+btnLogout.addEventListener("click", () => signOut(auth));
+
+onAuthStateChanged(auth, (user) => {
+  currentUser = user;
+  if (user) {
+    gate.classList.add("hidden");
+    document.body.classList.remove("locked");
+    userBox.classList.add("visible");
+    userName.textContent = user.displayName?.split(" ")[0] || "Пользователь";
+    userAvatar.src = user.photoURL || "";
+    if (!editors.html) initEditors();
+    listenToProjects();
+    runPreview();
+  } else {
+    gate.classList.remove("hidden");
+    document.body.classList.add("locked");
+    userBox.classList.remove("visible");
+    if (unsubscribeProjects) unsubscribeProjects();
+    projects = [];
+    currentProjectId = null;
+  }
+});
+
+// ------------------------------------------------------------
+// Firestore: project list (real-time)
+// ------------------------------------------------------------
+function projectsCollection() {
+  return collection(db, "users", currentUser.uid, "projects");
+}
+
+function listenToProjects() {
+  if (unsubscribeProjects) unsubscribeProjects();
+  const q = query(projectsCollection(), orderBy("updatedAt", "desc"));
+  unsubscribeProjects = onSnapshot(q, (snap) => {
+    projects = [];
+    snap.forEach((d) => projects.push({ id: d.id, ...d.data() }));
+    renderProjectList();
+    if (!currentProjectId && projects.length > 0) {
+      loadProject(projects[0].id);
+    } else if (projects.length === 0) {
+      createProject("Новый проект", true);
+    }
+  }, (err) => {
+    console.error("Firestore error:", err);
+  });
+}
+
+function renderProjectList() {
+  projectListEl.innerHTML = "";
+  sidebarEmpty.style.display = projects.length === 0 ? "block" : "none";
+  projects.forEach((p) => {
+    const li = document.createElement("li");
+    li.className = "project-item" + (p.id === currentProjectId ? " active" : "");
+    const time = p.updatedAt?.toDate ? relativeTime(p.updatedAt.toDate()) : "";
+    li.innerHTML = `
+      <div class="project-item-main">
+        <span class="file-dot"></span>
+        <span class="project-title"></span>
+      </div>
+      <span class="project-time">${time}</span>
+      <button class="project-menu-btn" title="Удалить">✕</button>
+    `;
+    li.querySelector(".project-title").textContent = p.name || "Без имени";
+    li.addEventListener("click", (e) => {
+      if (e.target.closest(".project-menu-btn")) return;
+      loadProject(p.id);
+    });
+    li.querySelector(".project-menu-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      confirmDeleteProject(p.id, p.name);
+    });
+    projectListEl.appendChild(li);
+  });
+}
+
+function relativeTime(date) {
+  const diff = (Date.now() - date.getTime()) / 1000;
+  if (diff < 60) return "только что";
+  if (diff < 3600) return Math.floor(diff / 60) + " мин";
+  if (diff < 86400) return Math.floor(diff / 3600) + " ч";
+  return Math.floor(diff / 86400) + " дн";
+}
+
+// ------------------------------------------------------------
+// Project CRUD
+// ------------------------------------------------------------
+async function createProject(name, silent) {
+  const docRef = await addDoc(projectsCollection(), {
+    name,
+    html: DEFAULT_FILES.html,
+    css: DEFAULT_FILES.css,
+    js: DEFAULT_FILES.js,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  currentProjectId = docRef.id;
+  if (!silent) {
+    // проект подтянется через onSnapshot и загрузится автоматически
+  }
+  return docRef.id;
+}
+
+function loadProject(id) {
+  const p = projects.find((x) => x.id === id);
+  if (!p) return;
+  currentProjectId = id;
+  if (!editors.html) initEditors();
+  editors.html.setValue(p.html ?? DEFAULT_FILES.html);
+  editors.css.setValue(p.css ?? DEFAULT_FILES.css);
+  editors.js.setValue(p.js ?? DEFAULT_FILES.js);
+  projectNameLabel.textContent = p.name || "Без имени";
+  renderProjectList();
+  markClean();
+  clearConsole();
+  runPreview();
+}
+
+async function saveCurrentProject() {
+  if (!currentProjectId || !currentUser) return;
+  btnSave.setAttribute("disabled", "true");
+  try {
+    await setDoc(doc(db, "users", currentUser.uid, "projects", currentProjectId), {
+      html: editors.html.getValue(),
+      css: editors.css.getValue(),
+      js: editors.js.getValue(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    markClean();
+  } catch (err) {
+    console.error(err);
+    saveStatus.textContent = "Ошибка сохранения";
+  } finally {
+    btnSave.removeAttribute("disabled");
+  }
+}
+btnSave.addEventListener("click", () => { clearTimeout(saveDebounceTimer); saveCurrentProject(); });
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    clearTimeout(saveDebounceTimer);
+    saveCurrentProject();
+  }
+});
+
+async function renameCurrentProject(newName) {
+  if (!currentProjectId) return;
+  await setDoc(doc(db, "users", currentUser.uid, "projects", currentProjectId), {
+    name: newName, updatedAt: serverTimestamp(),
+  }, { merge: true });
+  projectNameLabel.textContent = newName;
+}
+
+async function deleteProject(id) {
+  await deleteDoc(doc(db, "users", currentUser.uid, "projects", id));
+  if (id === currentProjectId) {
+    currentProjectId = null;
+    const next = projects.find((p) => p.id !== id);
+    if (next) loadProject(next.id);
+  }
+}
+
+// ------------------------------------------------------------
+// Modal (new project / rename / delete confirm)
+// ------------------------------------------------------------
+let modalMode = null;
+let modalTargetId = null;
+
+function openModal(mode, opts = {}) {
+  modalMode = mode;
+  modalTargetId = opts.id || null;
+  if (mode === "new") {
+    modalTitle.textContent = "Новый проект";
+    modalDesc.textContent = "Дайте проекту имя — его можно будет изменить позже.";
+    modalInput.style.display = "block";
+    modalInput.value = "Новый проект";
+    modalConfirm.textContent = "Создать";
+    modalConfirm.className = "btn btn-save";
+  } else if (mode === "rename") {
+    modalTitle.textContent = "Переименовать проект";
+    modalDesc.textContent = "Введите новое имя проекта.";
+    modalInput.style.display = "block";
+    modalInput.value = opts.currentName || "";
+    modalConfirm.textContent = "Сохранить";
+    modalConfirm.className = "btn btn-save";
+  } else if (mode === "delete") {
+    modalTitle.textContent = "Удалить проект?";
+    modalDesc.textContent = `«${opts.currentName}» будет удалён без возможности восстановления.`;
+    modalInput.style.display = "none";
+    modalConfirm.textContent = "Удалить";
+    modalConfirm.className = "btn btn-danger";
+  }
+  modalOverlay.classList.add("open");
+  if (modalInput.style.display !== "none") setTimeout(() => modalInput.focus(), 50);
+}
+function closeModal() {
+  modalOverlay.classList.remove("open");
+  modalMode = null; modalTargetId = null;
+}
+modalCancel.addEventListener("click", closeModal);
+modalOverlay.addEventListener("click", (e) => { if (e.target === modalOverlay) closeModal(); });
+
+modalConfirm.addEventListener("click", async () => {
+  if (modalMode === "new") {
+    const name = modalInput.value.trim() || "Новый проект";
+    closeModal();
+    await createProject(name);
+  } else if (modalMode === "rename") {
+    const name = modalInput.value.trim();
+    if (name) await renameCurrentProject(name);
+    closeModal();
+  } else if (modalMode === "delete") {
+    await deleteProject(modalTargetId);
+    closeModal();
+  }
+});
+modalInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") modalConfirm.click();
+});
+
+btnNewProject.addEventListener("click", () => openModal("new"));
+projectNameLabel.addEventListener("click", () => {
+  const current = projects.find((p) => p.id === currentProjectId);
+  openModal("rename", { currentName: current?.name || "" });
+});
+function confirmDeleteProject(id, name) {
+  openModal("delete", { id, currentName: name });
+}
+
+clearConsole();
+
+</script>
+</body>
+</html>
