@@ -548,7 +548,7 @@ body.locked { overflow: hidden; }
         <div class="console-log" id="console-log"></div>
         <div class="console-input-row">
           <span class="console-prompt">›</span>
-          <input type="text" id="console-input" placeholder="deploy [название проекта], clear…" autocomplete="off" />
+          <input type="text" id="console-input" placeholder="create site <название>, deploy site <название>, site delete <название>" autocomplete="off" />
         </div>
       </div>
     </section>
@@ -862,67 +862,138 @@ function slugify(str) {
 
 const DEPLOY_BASE_URL = "https://codeditor.wededit.xyz/site/";
 
-async function deployProject(rawName) {
-  let target;
+function currentEditorContent() {
+  return {
+    html: editors.html.getValue(),
+    css: editors.css.getValue(),
+    js: editors.js.getValue(),
+  };
+}
+
+async function createSite(rawName) {
   if (!rawName) {
-    if (!currentProjectId) {
-      appendConsoleLine("error", "Нет открытого проекта для деплоя.");
-      return;
-    }
-    const current = projects.find((p) => p.id === currentProjectId);
-    target = {
-      name: current?.name || "project",
-      html: editors.html.getValue(),
-      css: editors.css.getValue(),
-      js: editors.js.getValue(),
-    };
-  } else {
-    const found = projects.find((p) => (p.name || "").toLowerCase() === rawName.toLowerCase());
-    if (!found) {
-      const names = projects.map((p) => p.name).join(", ") || "—";
-      appendConsoleLine("error", `Проект «${rawName}» не найден. Ваши проекты: ${names}`);
-      return;
-    }
-    target = found.id === currentProjectId
-      ? { name: found.name, html: editors.html.getValue(), css: editors.css.getValue(), js: editors.js.getValue() }
-      : { name: found.name, html: found.html, css: found.css, js: found.js };
+    appendConsoleLine("error", "Укажите имя: create site <название>");
+    return;
   }
-
-  appendConsoleLine("info", `Деплой «${target.name}»…`);
-  let slug = slugify(target.name);
-
+  if (!currentProjectId) {
+    appendConsoleLine("error", "Сначала откройте или создайте проект.");
+    return;
+  }
+  const slug = slugify(rawName);
+  appendConsoleLine("info", `Создаю сайт «${rawName}»…`);
   try {
-    const existingSnap = await getDoc(doc(db, "publicSites", slug));
-    if (existingSnap.exists() && existingSnap.data().ownerId !== currentUser.uid) {
-      slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+    const ref = doc(db, "publicSites", slug);
+    const existing = await getDoc(ref);
+    if (existing.exists()) {
+      if (existing.data().ownerId !== currentUser.uid) {
+        appendConsoleLine("error", `Имя «${slug}» уже занято. Выберите другое название.`);
+      } else {
+        appendConsoleLine("error", `Сайт «${slug}» уже существует. Чтобы обновить его: deploy site ${rawName}`);
+      }
+      return;
     }
-    await setDoc(doc(db, "publicSites", slug), {
+    const content = currentEditorContent();
+    await setDoc(ref, {
       slug,
-      projectName: target.name,
-      html: target.html || "",
-      css: target.css || "",
-      js: target.js || "",
+      siteName: rawName,
+      projectId: currentProjectId,
       ownerId: currentUser.uid,
+      html: content.html,
+      css: content.css,
+      js: content.js,
+      createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    appendConsoleLine("log", "✅ Задеплоено:");
+    appendConsoleLine("log", "✅ Сайт создан:");
     appendLinkLine(DEPLOY_BASE_URL + slug);
   } catch (err) {
     console.error(err);
-    appendConsoleLine("error", "Ошибка деплоя: " + (err.message || err));
+    appendConsoleLine("error", "Ошибка создания сайта: " + (err.message || err));
+  }
+}
+
+async function deploySite(rawName) {
+  if (!rawName) {
+    appendConsoleLine("error", "Укажите имя: deploy site <название>");
+    return;
+  }
+  if (!currentProjectId) {
+    appendConsoleLine("error", "Сначала откройте проект.");
+    return;
+  }
+  const slug = slugify(rawName);
+  appendConsoleLine("info", `Обновляю сайт «${rawName}»…`);
+  try {
+    const ref = doc(db, "publicSites", slug);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      appendConsoleLine("error", `Сайт «${slug}» не найден. Сначала создайте его: create site ${rawName}`);
+      return;
+    }
+    const data = snap.data();
+    if (data.ownerId !== currentUser.uid) {
+      appendConsoleLine("error", "Этот сайт принадлежит другому аккаунту.");
+      return;
+    }
+    if (data.projectId !== currentProjectId) {
+      appendConsoleLine("error", "Этот сайт привязан к другому проекту. Откройте нужный проект в редакторе и повторите.");
+      return;
+    }
+    const content = currentEditorContent();
+    await setDoc(ref, {
+      html: content.html,
+      css: content.css,
+      js: content.js,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    appendConsoleLine("log", "✅ Обновлено:");
+    appendLinkLine(DEPLOY_BASE_URL + slug);
+  } catch (err) {
+    console.error(err);
+    appendConsoleLine("error", "Ошибка обновления: " + (err.message || err));
+  }
+}
+
+async function deleteSite(rawName) {
+  if (!rawName) {
+    appendConsoleLine("error", "Укажите имя: site delete <название>");
+    return;
+  }
+  const slug = slugify(rawName);
+  try {
+    const ref = doc(db, "publicSites", slug);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      appendConsoleLine("error", `Сайт «${slug}» не найден.`);
+      return;
+    }
+    if (snap.data().ownerId !== currentUser.uid) {
+      appendConsoleLine("error", "Вы не можете удалить чужой сайт.");
+      return;
+    }
+    await deleteDoc(ref);
+    appendConsoleLine("log", `🗑 Сайт «${slug}» удалён.`);
+  } catch (err) {
+    console.error(err);
+    appendConsoleLine("error", "Ошибка удаления: " + (err.message || err));
   }
 }
 
 function handleConsoleCommand(raw) {
   appendCommandEcho(raw);
-  const cmd = raw.split(/\s+/)[0].toLowerCase();
-  const rest = raw.slice(cmd.length).trim();
-  if (cmd === "deploy") {
-    deployProject(rest);
-  } else if (cmd === "clear") {
+  const tokens = raw.trim().split(/\s+/);
+  const lower = tokens.map((t) => t.toLowerCase());
+
+  if (lower[0] === "create" && lower[1] === "site") {
+    createSite(tokens.slice(2).join(" "));
+  } else if (lower[0] === "deploy" && lower[1] === "site") {
+    deploySite(tokens.slice(2).join(" "));
+  } else if (lower[0] === "site" && lower[1] === "delete") {
+    deleteSite(tokens.slice(2).join(" "));
+  } else if (lower[0] === "clear") {
     clearConsole();
   } else {
-    appendConsoleLine("error", `Неизвестная команда: «${cmd}». Доступно: deploy [название проекта], clear`);
+    appendConsoleLine("error", "Неизвестная команда. Доступно: create site <название>, deploy site <название>, site delete <название>, clear");
   }
 }
 consoleInput.addEventListener("keydown", (e) => {
