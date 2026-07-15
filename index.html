@@ -152,6 +152,8 @@ body.locked { overflow: hidden; }
   background: var(--accent-mint); color: #0a0b10; border-color: var(--accent-mint);
 }
 .btn-run:hover { box-shadow: 0 6px 18px rgba(94,234,212,0.3); }
+.btn-run.is-open { background: var(--accent-rose); border-color: var(--accent-rose); color: #fff; }
+.btn-run.is-open:hover { box-shadow: 0 6px 18px rgba(255,107,129,0.3); }
 .btn-save { background: var(--accent-violet); border-color: var(--accent-violet); color: #fff; }
 .btn-save:hover { box-shadow: 0 6px 18px rgba(124,92,252,0.3); }
 .btn-save[disabled] { opacity: 0.5; cursor: default; }
@@ -276,6 +278,42 @@ body.locked { overflow: hidden; }
 .cm-mount { position: absolute; inset: 0; display: none; }
 .cm-mount.active { display: block; }
 
+/* Тёмная тема для CodeMirror (переопределяем светлую тему "default") */
+.CodeMirror-gutters {
+  background: var(--bg-editor) !important;
+  border-right: 1px solid var(--border-soft) !important;
+}
+.CodeMirror-linenumber { color: var(--text-faint) !important; }
+.CodeMirror-cursor { border-left: 1.5px solid var(--accent-mint) !important; }
+.CodeMirror-selected { background: rgba(124, 92, 252, 0.28) !important; }
+.CodeMirror-line::selection, .CodeMirror-line > span::selection,
+.CodeMirror-line::-moz-selection, .CodeMirror-line > span::-moz-selection {
+  background: rgba(124, 92, 252, 0.28) !important;
+}
+.CodeMirror-activeline-background { background: rgba(124, 92, 252, 0.06) !important; }
+.CodeMirror-matchingbracket { color: var(--accent-mint) !important; outline: none; }
+
+.cm-s-default .cm-keyword { color: var(--accent-violet) !important; }
+.cm-s-default .cm-atom { color: var(--accent-amber) !important; }
+.cm-s-default .cm-number { color: var(--accent-amber) !important; }
+.cm-s-default .cm-def { color: var(--accent-mint) !important; }
+.cm-s-default .cm-variable { color: var(--text-primary) !important; }
+.cm-s-default .cm-variable-2 { color: var(--text-primary) !important; }
+.cm-s-default .cm-variable-3 { color: var(--accent-mint) !important; }
+.cm-s-default .cm-property { color: var(--accent-mint) !important; }
+.cm-s-default .cm-operator { color: var(--text-muted) !important; }
+.cm-s-default .cm-comment { color: var(--text-faint) !important; font-style: italic; }
+.cm-s-default .cm-string { color: var(--accent-amber) !important; }
+.cm-s-default .cm-string-2 { color: var(--accent-amber) !important; }
+.cm-s-default .cm-meta { color: var(--text-muted) !important; }
+.cm-s-default .cm-qualifier { color: var(--accent-mint) !important; }
+.cm-s-default .cm-builtin { color: var(--accent-violet) !important; }
+.cm-s-default .cm-bracket { color: var(--text-muted) !important; }
+.cm-s-default .cm-tag { color: var(--accent-rose) !important; }
+.cm-s-default .cm-attribute { color: var(--accent-mint) !important; }
+.cm-s-default .cm-link { color: var(--accent-violet) !important; }
+.cm-s-default .cm-error { color: var(--accent-rose) !important; }
+
 .preview-pane {
   display: flex; flex-direction: column;
   min-height: 0;
@@ -298,8 +336,27 @@ body.locked { overflow: hidden; }
 }
 .btn-console-toggle:hover { border-color: var(--accent-mint); color: var(--accent-mint); }
 
-.preview-frame-wrap { flex: 1; min-height: 0; background: #fff; }
-#preview-frame { width: 100%; height: 100%; border: none; display: block; }
+.preview-frame-wrap { flex: 1; min-height: 0; background: #fff; position: relative; }
+#preview-frame { width: 100%; height: 100%; border: none; display: block; transition: opacity 0.2s var(--ease); }
+
+.preview-placeholder {
+  position: absolute; inset: 0;
+  background: var(--bg-editor);
+  display: flex; align-items: center; justify-content: center;
+  text-align: left;
+  transition: opacity 0.25s var(--ease);
+}
+.pp-code {
+  font-family: var(--font-mono); font-size: 13px; line-height: 2;
+  color: var(--text-faint);
+}
+.pp-cursor {
+  display: inline-block; width: 7px; height: 1em;
+  background: var(--accent-mint); margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: pp-blink 1s step-end infinite;
+}
+@keyframes pp-blink { 50% { opacity: 0; } }
 
 .console-drawer {
   height: 0;
@@ -309,13 +366,14 @@ body.locked { overflow: hidden; }
   transition: height 0.25s var(--ease);
   flex-shrink: 0;
 }
-.console-drawer.open { height: 160px; }
+.console-drawer.open { height: 200px; display: flex; flex-direction: column; }
 .console-log {
-  height: 100%;
+  flex: 1;
   overflow-y: auto;
   padding: 8px 12px;
   font-family: var(--font-mono);
   font-size: 12px;
+  min-height: 0;
 }
 .console-line { padding: 3px 0; border-bottom: 1px solid var(--border-soft); display: flex; gap: 8px; }
 .console-line .tag { flex-shrink: 0; font-size: 10px; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; height: fit-content; }
@@ -323,8 +381,24 @@ body.locked { overflow: hidden; }
 .console-line.info .tag { background: rgba(94,234,212,0.15); color: var(--accent-mint); }
 .console-line.warn .tag { background: rgba(255,180,84,0.15); color: var(--accent-amber); }
 .console-line.error .tag { background: rgba(255,107,129,0.15); color: var(--accent-rose); }
+.console-line.cmd-echo .tag { background: rgba(124,92,252,0.15); color: var(--accent-violet); }
 .console-line .msg { color: var(--text-primary); word-break: break-word; }
+.console-line .msg a { color: var(--accent-mint); font-weight: 600; }
 .console-empty { color: var(--text-faint); padding: 10px 2px; }
+
+.console-input-row {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.console-prompt { color: var(--accent-mint); font-family: var(--font-mono); font-size: 13px; }
+#console-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text-primary); font-family: var(--font-mono); font-size: 12.5px;
+}
+#console-input::placeholder { color: var(--text-faint); }
 
 /* Status bar */
 .statusbar {
@@ -466,9 +540,16 @@ body.locked { overflow: hidden; }
       </div>
       <div class="preview-frame-wrap">
         <iframe id="preview-frame" sandbox="allow-scripts"></iframe>
+        <div class="preview-placeholder" id="preview-placeholder">
+          <div class="pp-code" id="pp-code"></div>
+        </div>
       </div>
       <div class="console-drawer" id="console-drawer">
         <div class="console-log" id="console-log"></div>
+        <div class="console-input-row">
+          <span class="console-prompt">›</span>
+          <input type="text" id="console-input" placeholder="deploy [название проекта], clear…" autocomplete="off" />
+        </div>
       </div>
     </section>
 
@@ -513,7 +594,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, setDoc, addDoc, deleteDoc,
+  getFirestore, collection, doc, setDoc, addDoc, deleteDoc, getDoc,
   onSnapshot, serverTimestamp, query, orderBy,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -546,8 +627,11 @@ const saveStatus = document.getElementById("save-status");
 
 const fileTabs = document.querySelectorAll(".file-tab");
 const previewFrame = document.getElementById("preview-frame");
+const previewPlaceholder = document.getElementById("preview-placeholder");
+const ppCode = document.getElementById("pp-code");
 const consoleDrawer = document.getElementById("console-drawer");
 const consoleLog = document.getElementById("console-log");
+const consoleInput = document.getElementById("console-input");
 const btnConsoleToggle = document.getElementById("btn-console-toggle");
 
 const modalOverlay = document.getElementById("modal-overlay");
@@ -566,7 +650,8 @@ let projects = [];
 let currentProjectId = null;
 let isDirty = false;
 let saveDebounceTimer = null;
-let previewDebounceTimer = null;
+let previewOpen = false;
+let placeholderTypeToken = 0;
 
 const DEFAULT_FILES = {
   html: "<h1>Привет, мир!</h1>\n<p>Начните писать код — предпросмотр обновится сам.</p>",
@@ -595,8 +680,6 @@ function initEditors() {
   Object.values(editors).forEach((cm) => {
     cm.on("change", () => {
       markDirty();
-      clearTimeout(previewDebounceTimer);
-      previewDebounceTimer = setTimeout(runPreview, 500);
     });
   });
 }
@@ -639,12 +722,68 @@ ${js}
 </body></html>`;
 }
 
-function runPreview() {
-  previewFrame.srcdoc = buildPreviewDoc();
+const PLACEHOLDER_LINES = [
+  "// нажмите ▶ Запустить, чтобы увидеть",
+  "// живой предпросмотр вашего проекта",
+];
+
+function typeText(el, text, speed) {
+  return new Promise((resolve) => {
+    let i = 0;
+    const timer = setInterval(() => {
+      i++;
+      el.textContent = text.slice(0, i);
+      if (i >= text.length) { clearInterval(timer); resolve(); }
+    }, speed);
+  });
 }
+
+async function typePlaceholder() {
+  const token = ++placeholderTypeToken;
+  ppCode.innerHTML = "";
+  for (const line of PLACEHOLDER_LINES) {
+    if (token !== placeholderTypeToken) return;
+    const div = document.createElement("div");
+    ppCode.appendChild(div);
+    await typeText(div, line, 22);
+    if (token !== placeholderTypeToken) return;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  if (token !== placeholderTypeToken) return;
+  const cursor = document.createElement("span");
+  cursor.className = "pp-cursor";
+  ppCode.lastChild.appendChild(cursor);
+}
+
+function showClosedPreview() {
+  previewOpen = false;
+  previewFrame.style.opacity = "0";
+  previewFrame.srcdoc = "about:blank";
+  previewPlaceholder.style.opacity = "1";
+  previewPlaceholder.style.pointerEvents = "auto";
+  btnRun.textContent = "▶ Запустить";
+  btnRun.classList.remove("is-open");
+  typePlaceholder();
+}
+
+function showOpenPreview() {
+  previewOpen = true;
+  placeholderTypeToken++; // отменяем анимацию плейсхолдера
+  previewPlaceholder.style.opacity = "0";
+  previewPlaceholder.style.pointerEvents = "none";
+  previewFrame.style.opacity = "1";
+  previewFrame.srcdoc = buildPreviewDoc();
+  btnRun.textContent = "■ Остановить";
+  btnRun.classList.add("is-open");
+}
+
 btnRun.addEventListener("click", () => {
-  clearConsole();
-  runPreview();
+  if (previewOpen) {
+    showClosedPreview();
+  } else {
+    clearConsole();
+    showOpenPreview();
+  }
 });
 
 window.addEventListener("message", (event) => {
@@ -663,11 +802,135 @@ function appendConsoleLine(type, msg) {
   consoleLog.appendChild(line);
   consoleLog.scrollTop = consoleLog.scrollHeight;
 }
+function appendLinkLine(url) {
+  const empty = consoleLog.querySelector(".console-empty");
+  if (empty) empty.remove();
+  const line = document.createElement("div");
+  line.className = "console-line log";
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  tag.textContent = "log";
+  const msg = document.createElement("span");
+  msg.className = "msg";
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = url;
+  msg.appendChild(a);
+  line.appendChild(tag);
+  line.appendChild(msg);
+  consoleLog.appendChild(line);
+  consoleLog.scrollTop = consoleLog.scrollHeight;
+}
+function appendCommandEcho(raw) {
+  const empty = consoleLog.querySelector(".console-empty");
+  if (empty) empty.remove();
+  const line = document.createElement("div");
+  line.className = "console-line cmd-echo";
+  line.innerHTML = `<span class="tag">&gt;</span><span class="msg"></span>`;
+  line.querySelector(".msg").textContent = raw;
+  consoleLog.appendChild(line);
+  consoleLog.scrollTop = consoleLog.scrollHeight;
+}
 function clearConsole() {
-  consoleLog.innerHTML = '<div class="console-empty">Консоль пуста — запустите проект</div>';
+  consoleLog.innerHTML = '<div class="console-empty">Консоль пуста — запустите проект, либо введите команду ниже</div>';
 }
 btnConsoleToggle.addEventListener("click", () => {
   consoleDrawer.classList.toggle("open");
+  if (consoleDrawer.classList.contains("open")) setTimeout(() => consoleInput.focus(), 200);
+});
+
+// ------------------------------------------------------------
+// Консольные команды: deploy [название], clear
+// ------------------------------------------------------------
+const TRANSLIT = {
+  а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"y",
+  к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",
+  х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya",
+};
+function slugify(str) {
+  const transliterated = str.toLowerCase().split("").map((ch) => (
+    TRANSLIT[ch] !== undefined ? TRANSLIT[ch] : ch
+  )).join("");
+  const slug = transliterated
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return slug || "project";
+}
+
+const DEPLOY_BASE_URL = "https://codeditor.wededit.xyz/site/";
+
+async function deployProject(rawName) {
+  let target;
+  if (!rawName) {
+    if (!currentProjectId) {
+      appendConsoleLine("error", "Нет открытого проекта для деплоя.");
+      return;
+    }
+    const current = projects.find((p) => p.id === currentProjectId);
+    target = {
+      name: current?.name || "project",
+      html: editors.html.getValue(),
+      css: editors.css.getValue(),
+      js: editors.js.getValue(),
+    };
+  } else {
+    const found = projects.find((p) => (p.name || "").toLowerCase() === rawName.toLowerCase());
+    if (!found) {
+      const names = projects.map((p) => p.name).join(", ") || "—";
+      appendConsoleLine("error", `Проект «${rawName}» не найден. Ваши проекты: ${names}`);
+      return;
+    }
+    target = found.id === currentProjectId
+      ? { name: found.name, html: editors.html.getValue(), css: editors.css.getValue(), js: editors.js.getValue() }
+      : { name: found.name, html: found.html, css: found.css, js: found.js };
+  }
+
+  appendConsoleLine("info", `Деплой «${target.name}»…`);
+  let slug = slugify(target.name);
+
+  try {
+    const existingSnap = await getDoc(doc(db, "publicSites", slug));
+    if (existingSnap.exists() && existingSnap.data().ownerId !== currentUser.uid) {
+      slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+    }
+    await setDoc(doc(db, "publicSites", slug), {
+      slug,
+      projectName: target.name,
+      html: target.html || "",
+      css: target.css || "",
+      js: target.js || "",
+      ownerId: currentUser.uid,
+      updatedAt: serverTimestamp(),
+    });
+    appendConsoleLine("log", "✅ Задеплоено:");
+    appendLinkLine(DEPLOY_BASE_URL + slug);
+  } catch (err) {
+    console.error(err);
+    appendConsoleLine("error", "Ошибка деплоя: " + (err.message || err));
+  }
+}
+
+function handleConsoleCommand(raw) {
+  appendCommandEcho(raw);
+  const cmd = raw.split(/\s+/)[0].toLowerCase();
+  const rest = raw.slice(cmd.length).trim();
+  if (cmd === "deploy") {
+    deployProject(rest);
+  } else if (cmd === "clear") {
+    clearConsole();
+  } else {
+    appendConsoleLine("error", `Неизвестная команда: «${cmd}». Доступно: deploy [название проекта], clear`);
+  }
+}
+consoleInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const raw = consoleInput.value.trim();
+    consoleInput.value = "";
+    if (raw) handleConsoleCommand(raw);
+  }
 });
 
 // ------------------------------------------------------------
@@ -714,7 +977,7 @@ onAuthStateChanged(auth, (user) => {
     userAvatar.src = user.photoURL || "";
     if (!editors.html) initEditors();
     listenToProjects();
-    runPreview();
+    showClosedPreview();
   } else {
     gate.classList.remove("hidden");
     document.body.classList.add("locked");
@@ -816,7 +1079,7 @@ function loadProject(id) {
   renderProjectList();
   markClean();
   clearConsole();
-  runPreview();
+  showClosedPreview();
 }
 
 async function saveCurrentProject() {
